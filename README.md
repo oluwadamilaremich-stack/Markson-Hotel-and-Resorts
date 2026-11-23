@@ -1,36 +1,50 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Markson Hotels & Resorts
 
-## Getting Started
+Markson Hotels & Resorts is a hotel website and booking demo built with Next.js. The site includes
+room browsing, test-mode Paystack checkout, guest contact and newsletter forms, and Telegram
+operations notifications.
 
-First, run the development server:
+## Repository layout
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+- `apps/frontend/` — Next.js website, API routes, booking flow, and Telegram bot code.
+- `docs/` — Booking demo and Telegram operations guides.
+
+## Run locally
+
+Use Node.js and npm. From PowerShell:
+
+```powershell
+Set-Location apps/frontend
+npm install
+if (-not (Test-Path .env.local)) { Copy-Item .env.example .env.local }
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Set `PAYSTACK_SECRET_KEY` in `.env.local` to a Paystack **test** secret, then run:
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```powershell
+npm run dev
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+The site is available at `http://localhost:3000`.
 
-## Learn More
+To receive Telegram commands locally, run `npm run bot:dev` in a second terminal from
+`apps/frontend`. Local polling disables the bot's webhook; do not run it at the same time as the
+deployed webhook. See [the Telegram operations guide](docs/telegram-bot.md) for setup details.
 
-To learn more about Next.js, take a look at the following resources:
+## Validation
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+From `apps/frontend`, run:
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```powershell
+npm test
+npm run lint
+npm run typecheck
+npm run build
+```
 
-## Deploy on Vercel
+## Current limitations
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- Paystack checkout is restricted to test mode and does not charge real money.
+- Booking and editable content data use local JSON files; production deployment needs durable
+  database storage and atomic availability handling.
+- Do not commit `.env.local` or runtime booking data.

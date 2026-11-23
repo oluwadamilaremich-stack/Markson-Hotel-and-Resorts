@@ -1,0 +1,166 @@
+@import "tailwindcss";
+
+/* Design tokens taken from the Markson Figma file */
+@theme {
+  --color-ink: #1f3a40;
+  --color-ink-soft: #4b6166;
+  --color-sand: #f9f6f3;
+  --color-mist: #ecf2f2;
+  --color-line: #d1dfe0;
+  --color-teal: #0f677d;
+  --color-tan: #a1826a;
+  --color-tan-light: #bfa58e;
+  --color-bronze: #7d5d46;
+
+  --font-display: var(--font-playfair), Georgia, serif;
+  --font-sans: var(--font-bricolage), system-ui, sans-serif;
+
+  --container-site: 1440px;
+
+  --ease-soft: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* Header sitting at the top of a page that opens with a photo hero (see PageHero's
+   data-photo-hero and SiteHeader's data-top). Works for any page, including 404s. */
+@custom-variant over-hero {
+  body:has([data-photo-hero]) &[data-top],
+  body:has([data-photo-hero]) [data-top] & {
+    @slot;
+  }
+}
+
+@layer base {
+  /* `clip` (unlike `hidden`) stops sideways scrolling on phones without breaking sticky sections */
+  html,
+  body {
+    overflow-x: clip;
+  }
+
+  html {
+    scroll-behavior: smooth;
+  }
+
+  /* Body text is a notch smaller on phones and returns to the Figma size from tablets up. */
+  body {
+    @apply bg-sand font-sans text-ink antialiased;
+    font-size: 14px;
+    line-height: 1.5;
+    letter-spacing: -0.02em;
+
+    @variant md {
+      font-size: 16px;
+    }
+  }
+
+  ::selection {
+    @apply bg-ink text-sand;
+  }
+}
+
+/* Type scale (Figma: Playfair Display 88/56/32/22, Bricolage Grotesque 18/16/14/12) */
+@utility text-display {
+  font-family: var(--font-display);
+  font-size: clamp(3rem, 6.1vw, 5.5rem);
+  line-height: 1.2;
+  letter-spacing: -0.4px;
+}
+
+@utility text-h2 {
+  font-family: var(--font-display);
+  font-size: clamp(2.25rem, 3.9vw, 3.5rem);
+  line-height: 1.2;
+  letter-spacing: -0.15px;
+}
+
+@utility text-h3 {
+  font-family: var(--font-display);
+  font-size: clamp(1.625rem, 2.3vw, 2rem);
+  line-height: 1.4;
+  letter-spacing: -0.64px;
+}
+
+@utility text-h4 {
+  font-family: var(--font-display);
+  font-size: 1.25rem;
+  @variant md {
+    font-size: 1.375rem;
+  }
+  line-height: 1.4;
+  letter-spacing: -0.44px;
+}
+
+@utility text-lead {
+  font-size: 1rem;
+  @variant md {
+    font-size: 1.125rem;
+  }
+  line-height: 1.4;
+  letter-spacing: 0.25px;
+}
+
+@utility text-small {
+  font-size: 0.8125rem;
+  @variant md {
+    font-size: 0.875rem;
+  }
+  line-height: 1.5;
+  letter-spacing: 0.15px;
+}
+
+@utility text-tiny {
+  font-size: 0.75rem;
+  line-height: 1.5;
+  letter-spacing: 0;
+}
+
+@utility px-site {
+  padding-inline: clamp(1.25rem, 3.6vw, 3.25rem);
+}
+
+/* Loading intro (see components/layout/intro-screen.tsx). Only shown when the inline script
+   marks <html data-intro="play">; ~2.6s in total. */
+.intro-screen {
+  display: none;
+}
+
+html[data-intro="play"] {
+  &:has(#intro) {
+    overflow: hidden;
+  }
+
+  .intro-screen {
+    display: flex;
+    animation: intro-screen-out 0.5s var(--ease-soft) 2.1s forwards;
+  }
+  .intro-line {
+    transform-origin: center;
+    animation: intro-line-in 0.6s var(--ease-soft) both;
+  }
+  .intro-monogram {
+    animation: intro-rise 0.6s var(--ease-soft) 0.3s both;
+  }
+  .intro-wordmark {
+    animation: intro-rise 0.6s var(--ease-soft) 0.42s both;
+  }
+  .intro-lockup {
+    animation: intro-lockup-out 0.85s cubic-bezier(0.65, 0, 0.35, 1) 1.3s forwards;
+  }
+}
+
+@keyframes intro-line-in {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+
+@keyframes intro-rise {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes intro-lockup-out {
+  to { opacity: 0; transform: scale(0.6); }
+}
+
+@keyframes intro-screen-out {
+  to { opacity: 0; visibility: hidden; }
+}
