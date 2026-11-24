@@ -4,12 +4,13 @@ import { revalidatePath } from "next/cache";
 import { rooms as initialRooms, type Room } from "@/content/rooms";
 import { posts as initialPosts, type Post } from "@/content/posts";
 import { findRoomAvailabilityConflict } from "@/lib/booking-rules";
+import type { Collection, Document } from "mongodb";
+import { getMongoDb } from "./mongodb";
 export { datesOverlap } from "@/lib/booking-rules";
 
 const DATA_DIR = path.resolve(process.cwd(), "data");
 const ROOMS_FILE = path.join(DATA_DIR, "rooms.json");
 const POSTS_FILE = path.join(DATA_DIR, "posts.json");
-const BOOKINGS_FILE = path.join(DATA_DIR, "bookings.json");
 
 function ensureDirectoryExists() {
   if (!fs.existsSync(DATA_DIR)) {
@@ -22,10 +23,7 @@ function ensureDirectoryExists() {
 // -------------------------------------------------------------
 
 export function getStoredRooms(): Room[] {
-  ensureDirectoryExists();
   if (!fs.existsSync(ROOMS_FILE)) {
-    // Seed initial data from code
-    fs.writeFileSync(ROOMS_FILE, JSON.stringify(initialRooms, null, 2), "utf-8");
     return initialRooms;
   }
 
@@ -92,9 +90,7 @@ export function addStoredRoom(room: Room): Room {
 // -------------------------------------------------------------
 
 export function getStoredPosts(): Post[] {
-  ensureDirectoryExists();
   if (!fs.existsSync(POSTS_FILE)) {
-    fs.writeFileSync(POSTS_FILE, JSON.stringify(initialPosts, null, 2), "utf-8");
     return initialPosts;
   }
 
@@ -158,26 +154,45 @@ export type StoredBooking = {
   status: "confirmed" | "blocked" | "cancelled";
 };
 
-export function getStoredBookings(): StoredBooking[] {
-  ensureDirectoryExists();
-  if (!fs.existsSync(BOOKINGS_FILE)) {
-    fs.writeFileSync(BOOKINGS_FILE, JSON.stringify([], null, 2), "utf-8");
-    return [];
-  }
+type MongoStoredBooking = StoredBooking & Document;
 
-  try {
-    const raw = fs.readFileSync(BOOKINGS_FILE, "utf-8");
-    const data = JSON.parse(raw);
-    return Array.isArray(data) ? (data as StoredBooking[]) : [];
-  } catch (error) {
-    console.error("[Store] Error reading bookings.json:", error);
-    return [];
+let bookingsCollectionPromise: Promise<Collection<MongoStoredBooking>> | undefined;
+
+function getBookingsCollection(): Promise<Collection<MongoStoredBooking>> {
+  if (!bookingsCollectionPromise) {
+    bookingsCollectionPromise = getMongoDb()
+      .then(async (db) => {
+        const collection = db.collection<MongoStoredBooking>("bookings");
+        await collection.createIndex({ reference: 1 }, { unique: true });
+        return collection;
+      })
+      .catch((error: unknown) => {
+        bookingsCollectionPromise = undefined;
+        throw error;
+      });
   }
+  return bookingsCollectionPromise;
 }
 
-export function saveStoredBookings(bookings: StoredBooking[]): void {
-  ensureDirectoryExists();
-  fs.writeFileSync(BOOKINGS_FILE, JSON.stringify(bookings, null, 2), "utf-8");
+export async function getStoredBookings(): Promise<StoredBooking[]> {
+  const documents = await (await getBookingsCollection()).find().toArray();
+  return documents.map((document) => ({
+    reference: document.reference,
+    roomSlug: document.roomSlug,
+    roomName: document.roomName,
+    checkIn: document.checkIn,
+    checkOut: document.checkOut,
+    nights: document.nights,
+    guests: document.guests,
+    amountKobo: document.amountKobo,
+    guestName: document.guestName,
+    guestEmail: document.guestEmail,
+    guestPhone: document.guestPhone,
+    createdAt: document.createdAt,
+    ...(document.actualCheckOut ? { actualCheckOut: document.actualCheckOut } : {}),
+    ...(document.checkedOutAt ? { checkedOutAt: document.checkedOutAt } : {}),
+    status: document.status,
+  }));
 }
 
 function getLagosDate() {
@@ -188,13 +203,13 @@ function getLagosDate() {
  * Checks whether a room is free for a given date range.
  * Returns { available: boolean, conflictingBooking?: StoredBooking }
  */
-export function checkRoomAvailability(
+export async function checkRoomAvailability(
   roomSlug: string,
   checkIn: string,
   checkOut: string,
   excludeReference?: string,
-): { available: boolean; conflictingBooking?: StoredBooking } {
-  const bookings = getStoredBookings();
+): Promise<{ available: boolean; conflictingBooking?: StoredBooking }> {
+  const bookings = await getStoredBookings();
   const conflictingBooking = findRoomAvailabilityConflict(
     bookings,
     roomSlug,
@@ -208,8 +223,10 @@ export function checkRoomAvailability(
 /**
  * Returns all active booked date ranges for a given room.
  */
-export function getBookedRangesForRoom(roomSlug: string): { checkIn: string; checkOut: string; reference: string }[] {
-  const bookings = getStoredBookings();
+export async function getBookedRangesForRoom(
+  roomSlug: string,
+): Promise<{ checkIn: string; checkOut: string; reference: string }[]> {
+  const bookings = await getStoredBookings();
   const today = getLagosDate();
 
   return bookings
@@ -228,32 +245,28 @@ export function getBookedRangesForRoom(roomSlug: string): { checkIn: string; che
 /**
  * Records or updates a confirmed booking in the persistent store.
  */
-export function recordBooking(booking: StoredBooking): boolean {
-  const bookings = getStoredBookings();
-  const existingIdx = bookings.findIndex((b) => b.reference === booking.reference);
+export async function recordBooking(booking: StoredBooking): Promise<boolean> {
+  const collection = await getBookingsCollection();
+  const existing = await collection.findOne({ reference: booking.reference });
+  const { reference, ...fields } = booking;
+  if (existing?.actualCheckOut) fields.actualCheckOut = existing.actualCheckOut;
+  if (existing?.checkedOutAt) fields.checkedOutAt = existing.checkedOutAt;
 
-  if (existingIdx >= 0) {
-    bookings[existingIdx] = {
-      ...booking,
-      actualCheckOut: bookings[existingIdx].actualCheckOut,
-      checkedOutAt: bookings[existingIdx].checkedOutAt,
-    };
-    saveStoredBookings(bookings);
-    return false;
-  } else {
-    bookings.push(booking);
-    saveStoredBookings(bookings);
-    return true;
-  }
+  const result = await collection.updateOne(
+    { reference },
+    { $set: fields, $setOnInsert: { reference } },
+    { upsert: true },
+  );
+  return result.upsertedCount === 1;
 }
 
-export function markBookingCheckedOut(reference: string): {
+export async function markBookingCheckedOut(reference: string): Promise<{
   ok: boolean;
   message: string;
   booking?: StoredBooking;
-} {
-  const bookings = getStoredBookings();
-  const booking = bookings.find((item) => item.reference === reference);
+}> {
+  const collection = await getBookingsCollection();
+  const booking = await collection.findOne({ reference });
   if (!booking) return { ok: false, message: "Booking not found." };
   if (booking.status !== "confirmed") {
     return { ok: false, message: "Only confirmed bookings can be checked out." };
@@ -272,21 +285,30 @@ export function markBookingCheckedOut(reference: string): {
 
   booking.actualCheckOut = actualCheckOut;
   booking.checkedOutAt = new Date().toISOString();
-  saveStoredBookings(bookings);
-  return { ok: true, message: "Early checkout recorded.", booking };
+  const result = await collection.updateOne(
+    { reference, status: "confirmed", actualCheckOut: { $exists: false } },
+    { $set: { actualCheckOut, checkedOutAt: booking.checkedOutAt } },
+  );
+  if (result.modifiedCount !== 1) {
+    return {
+      ok: false,
+      message: "Early checkout was already recorded.",
+    };
+  }
+  return { ok: true, message: "Early checkout recorded.", booking: { ...booking } };
 }
 
 /**
  * Manually blocks room dates (e.g. offline walk-in guest or maintenance).
  */
-export function blockRoomDates(
+export async function blockRoomDates(
   roomSlug: string,
   roomName: string,
   checkIn: string,
   checkOut: string,
   reason = "Reserved / Maintenance",
-): { ok: boolean; message: string; booking?: StoredBooking } {
-  const availability = checkRoomAvailability(roomSlug, checkIn, checkOut);
+): Promise<{ ok: boolean; message: string; booking?: StoredBooking }> {
+  const availability = await checkRoomAvailability(roomSlug, checkIn, checkOut);
   if (!availability.available) {
     return {
       ok: false,
@@ -317,19 +339,17 @@ export function blockRoomDates(
     status: "blocked",
   };
 
-  recordBooking(blockRecord);
+  await recordBooking(blockRecord);
   return { ok: true, message: "Dates successfully blocked.", booking: blockRecord };
 }
 
 /**
  * Releases or cancels a booking.
  */
-export function cancelStoredBooking(reference: string): boolean {
-  const bookings = getStoredBookings();
-  const target = bookings.find((b) => b.reference === reference);
-  if (!target) return false;
-
-  target.status = "cancelled";
-  saveStoredBookings(bookings);
-  return true;
+export async function cancelStoredBooking(reference: string): Promise<boolean> {
+  const result = await (await getBookingsCollection()).updateOne(
+    { reference, status: { $ne: "cancelled" } },
+    { $set: { status: "cancelled" } },
+  );
+  return result.modifiedCount === 1;
 }

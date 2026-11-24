@@ -19,7 +19,9 @@ npm ci
 if (-not (Test-Path .env.local)) { Copy-Item .env.example .env.local }
 ```
 
-Set `PAYSTACK_SECRET_KEY` in `.env.local` to a Paystack **test** secret, then run:
+Before starting the app, set `PAYSTACK_SECRET_KEY` in `.env.local` to a Paystack **test** secret
+and `MONGODB_URI` to your MongoDB Atlas connection string. Keep both values private; never commit
+them or put them in a `NEXT_PUBLIC_` variable. Then run:
 
 ```powershell
 npm run dev
@@ -42,6 +44,7 @@ Add these environment variables in the Vercel project settings before deploying:
 
 - `PAYSTACK_SECRET_KEY` — Paystack **test** secret only.
 - `APP_URL` — The deployed site's canonical HTTPS URL.
+- `MONGODB_URI` — MongoDB Atlas connection string for persistent booking availability and records.
 - `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, `TELEGRAM_ADMIN_USER_IDS`, and
   `TELEGRAM_WEBHOOK_SECRET` — Required for Telegram operations.
 - `BREVO_API_KEY`, `BREVO_SENDER_EMAIL`, and `BREVO_SENDER_NAME` — Required for transactional
@@ -66,6 +69,8 @@ npm run build
 ## Current limitations
 
 - Paystack checkout is restricted to test mode and does not charge real money.
-- Booking and editable content data use local JSON files. Vercel's filesystem is not durable, so
-  production bookings and content require durable database storage and atomic availability handling.
+- Booking date checks and payment initialization are not an atomic room hold; keep this in test
+  mode until reservation locking and payment/refund handling are added.
+- Bookings use MongoDB. Room and blog edits still use local JSON files, which are not durable on
+  Vercel; editable content needs a database before production use.
 - Do not commit `.env.local` or runtime booking data.

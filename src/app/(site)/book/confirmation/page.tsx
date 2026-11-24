@@ -38,39 +38,25 @@ async function BookingConfirmationContent({
 
   const room = verifiedBooking ? await getRoom(verifiedBooking.roomSlug) : null;
   if (verifiedBooking && room) {
-    // Lock dates in persistent store
-    const isNewBooking = recordBooking({
-      reference: verifiedBooking.reference,
-      roomSlug: verifiedBooking.roomSlug,
-      roomName: room.name,
-      checkIn: verifiedBooking.checkIn,
-      checkOut: verifiedBooking.checkOut,
-      nights: verifiedBooking.nights,
-      guests: verifiedBooking.guests,
-      amountKobo: verifiedBooking.amountKobo,
-      guestName: verifiedBooking.guestName || "Guest",
-      guestEmail: verifiedBooking.guestEmail || "",
-      guestPhone: verifiedBooking.guestPhone || "",
-      createdAt: new Date().toISOString(),
-      status: "confirmed",
-    });
-
-    if (isNewBooking) {
-      sendBookingAlert({
+    try {
+      const isNewBooking = await recordBooking({
         reference: verifiedBooking.reference,
+        roomSlug: verifiedBooking.roomSlug,
         roomName: room.name,
         checkIn: verifiedBooking.checkIn,
         checkOut: verifiedBooking.checkOut,
         nights: verifiedBooking.nights,
         guests: verifiedBooking.guests,
         amountKobo: verifiedBooking.amountKobo,
-        guestName: verifiedBooking.guestName,
-        guestPhone: verifiedBooking.guestPhone,
-        guestEmail: verifiedBooking.guestEmail,
-      }).catch((error) => console.error("[Telegram Alert] Failed to dispatch booking alert:", error));
+        guestName: verifiedBooking.guestName || "Guest",
+        guestEmail: verifiedBooking.guestEmail || "",
+        guestPhone: verifiedBooking.guestPhone || "",
+        createdAt: new Date().toISOString(),
+        status: "confirmed",
+      });
 
-      if (verifiedBooking.guestEmail) {
-        sendBookingConfirmationEmail({
+      if (isNewBooking) {
+        sendBookingAlert({
           reference: verifiedBooking.reference,
           roomName: room.name,
           checkIn: verifiedBooking.checkIn,
@@ -78,11 +64,30 @@ async function BookingConfirmationContent({
           nights: verifiedBooking.nights,
           guests: verifiedBooking.guests,
           amountKobo: verifiedBooking.amountKobo,
-          guestName: verifiedBooking.guestName || "Guest",
-          guestEmail: verifiedBooking.guestEmail,
+          guestName: verifiedBooking.guestName,
           guestPhone: verifiedBooking.guestPhone,
-        }).catch((error) => console.error("[Brevo] Failed to dispatch guest confirmation email:", error));
+          guestEmail: verifiedBooking.guestEmail,
+        }).catch((error) => console.error("[Telegram Alert] Failed to dispatch booking alert:", error));
+
+        if (verifiedBooking.guestEmail) {
+          sendBookingConfirmationEmail({
+            reference: verifiedBooking.reference,
+            roomName: room.name,
+            checkIn: verifiedBooking.checkIn,
+            checkOut: verifiedBooking.checkOut,
+            nights: verifiedBooking.nights,
+            guests: verifiedBooking.guests,
+            amountKobo: verifiedBooking.amountKobo,
+            guestName: verifiedBooking.guestName || "Guest",
+            guestEmail: verifiedBooking.guestEmail,
+            guestPhone: verifiedBooking.guestPhone,
+          }).catch((error) => console.error("[Brevo] Failed to dispatch guest confirmation email:", error));
+        }
       }
+    } catch (error) {
+      console.error("[Booking Confirmation] MongoDB could not save the verified booking.", error);
+      message = `Payment was verified, but the booking could not be saved. Contact the hotel with reference ${verifiedBooking.reference}.`;
+      verifiedBooking = null;
     }
   }
 

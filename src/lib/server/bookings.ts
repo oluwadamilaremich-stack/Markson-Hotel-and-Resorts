@@ -68,7 +68,16 @@ export async function initializeBooking(request: Request): Promise<Response> {
   // -----------------------------------------------------------------
   // CALENDAR COLLISION CHECK: Prevent double-booking this room
   // -----------------------------------------------------------------
-  const availability = checkRoomAvailability(roomSlug, checkIn, checkOut);
+  let availability: Awaited<ReturnType<typeof checkRoomAvailability>>;
+  try {
+    availability = await checkRoomAvailability(roomSlug, checkIn, checkOut);
+  } catch (error) {
+    console.error("[Booking] Could not query MongoDB availability.", error);
+    return Response.json(
+      { error: "Booking availability is temporarily unavailable. Please try again later." },
+      { status: 503 },
+    );
+  }
   if (!availability.available) {
     const conflict = availability.conflictingBooking;
     const msg = conflict
@@ -85,9 +94,10 @@ export async function initializeBooking(request: Request): Promise<Response> {
   const reference = `markson_${randomUUID().replaceAll("-", "")}`;
   let callbackUrl: string;
   try {
-    callbackUrl = new URL("/book/confirmation", process.env.APP_URL ?? "http://localhost:3000").toString();
+    const appUrl = process.env.APP_URL?.trim() || new URL(request.url).origin;
+    callbackUrl = new URL("/book/confirmation", appUrl).toString();
   } catch {
-    console.error("APP_URL must be a valid absolute URL.");
+    console.error("APP_URL must be a valid absolute URL, or the request must have a valid origin.");
     return Response.json(
       { error: "The booking service is not configured correctly." },
       { status: 500 },
@@ -124,21 +134,32 @@ export async function verifyBooking(reference: string): Promise<Response> {
   const roomName = room?.name ?? result.booking.roomSlug;
 
   // Persist confirmed booking into data store to lock the calendar dates
-  const isNewBooking = recordBooking({
-    reference: result.booking.reference,
-    roomSlug: result.booking.roomSlug,
-    roomName,
-    checkIn: result.booking.checkIn,
-    checkOut: result.booking.checkOut,
-    nights: result.booking.nights,
-    guests: result.booking.guests,
-    amountKobo: result.booking.amountKobo,
-    guestName: result.booking.guestName || "Guest",
-    guestEmail: result.booking.guestEmail || "",
-    guestPhone: result.booking.guestPhone || "",
-    createdAt: new Date().toISOString(),
-    status: "confirmed",
-  });
+  let isNewBooking: boolean;
+  try {
+    isNewBooking = await recordBooking({
+      reference: result.booking.reference,
+      roomSlug: result.booking.roomSlug,
+      roomName,
+      checkIn: result.booking.checkIn,
+      checkOut: result.booking.checkOut,
+      nights: result.booking.nights,
+      guests: result.booking.guests,
+      amountKobo: result.booking.amountKobo,
+      guestName: result.booking.guestName || "Guest",
+      guestEmail: result.booking.guestEmail || "",
+      guestPhone: result.booking.guestPhone || "",
+      createdAt: new Date().toISOString(),
+      status: "confirmed",
+    });
+  } catch (error) {
+    console.error("[Booking] Paystack payment verified, but MongoDB could not save the booking.", error);
+    return Response.json(
+      {
+        error: `Payment was verified, but the booking could not be saved. Contact the hotel with reference ${result.booking.reference}.`,
+      },
+      { status: 503 },
+    );
+  }
 
   if (isNewBooking) {
     // Trigger real-time Telegram notification to hotel staff

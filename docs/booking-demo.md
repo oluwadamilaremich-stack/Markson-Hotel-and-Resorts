@@ -8,15 +8,14 @@ a secret key beginning with `sk_test_`; keep the key in `.env.local`, never in a
 ## Run locally
 
 1. In the Paystack dashboard, use test mode and create a test secret key.
-2. From the repository root, run `npm ci`, copy `.env.example` to `.env.local`, and set `PAYSTACK_SECRET_KEY` to the test key.
+2. From the repository root, run `npm ci`, copy `.env.example` to `.env.local`, and set `PAYSTACK_SECRET_KEY` to the test key and `MONGODB_URI` to your MongoDB Atlas connection string.
 3. Keep `APP_URL` set to `http://localhost:3000`, then run `npm run dev`.
 4. Open a room page, select **Book a Stay**, and complete checkout with Paystack's test details.
 
 The server verifies transaction status, reference, currency, room, dates, guest limit, and the
-server-calculated amount. After verification, the app records demo bookings in
-`data/bookings.json` for local availability checks, then sends a Telegram staff alert
-and a guest confirmation email. `GET /api/health` checks server status.
+server-calculated amount. After verification, the app records demo bookings in MongoDB, then sends
+a Telegram staff alert and a guest confirmation email. `GET /api/health` checks server status.
 
-The JSON store is local demo persistence, not a production database or a connection to real hotel
-inventory. It is not suitable for durable serverless storage or concurrent production bookings.
-A successful test transaction does not charge real money. Do not use a live secret key.
+Paystack is restricted to test mode: a successful test transaction does not charge real money.
+Do not use a live secret key. Room and blog content are still stored in local JSON files, so edits
+to that content are not durable on Vercel.

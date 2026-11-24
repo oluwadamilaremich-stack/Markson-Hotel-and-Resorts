@@ -366,7 +366,7 @@ export async function handleTelegramUpdate(update: TelegramUpdate) {
       }
 
       const reference = data.slice("early_checkout_confirm:".length);
-      const result = markBookingCheckedOut(reference);
+      const result = await markBookingCheckedOut(reference);
       await callTelegramApi("answerCallbackQuery", {
         callback_query_id: cq.id,
         text: result.message,

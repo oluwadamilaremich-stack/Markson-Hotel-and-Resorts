@@ -11,29 +11,31 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "roomSlug is required." }, { status: 400 });
   }
 
-  // If specific dates are requested, check availability
-  if (checkIn && checkOut) {
-    const result = checkRoomAvailability(roomSlug, checkIn, checkOut);
-    return NextResponse.json({
-      roomSlug,
-      checkIn,
-      checkOut,
-      available: result.available,
-      conflictingDates: result.conflictingBooking
-        ? {
-            checkIn: result.conflictingBooking.checkIn,
-            checkOut: result.conflictingBooking.checkOut,
-            status: result.conflictingBooking.status,
-          }
-        : null,
-    });
+  try {
+    if (checkIn && checkOut) {
+      const result = await checkRoomAvailability(roomSlug, checkIn, checkOut);
+      return NextResponse.json({
+        roomSlug,
+        checkIn,
+        checkOut,
+        available: result.available,
+        conflictingDates: result.conflictingBooking
+          ? {
+              checkIn: result.conflictingBooking.checkIn,
+              checkOut: result.conflictingBooking.checkOut,
+              status: result.conflictingBooking.status,
+            }
+          : null,
+      });
+    }
+
+    const bookedRanges = await getBookedRangesForRoom(roomSlug);
+    return NextResponse.json({ roomSlug, bookedRanges });
+  } catch (error) {
+    console.error("[Booking availability] Could not query MongoDB.", error);
+    return NextResponse.json(
+      { error: "Booking availability is temporarily unavailable." },
+      { status: 503 },
+    );
   }
-
-  // Otherwise, return all booked date ranges for this room
-  const bookedRanges = getBookedRangesForRoom(roomSlug);
-
-  return NextResponse.json({
-    roomSlug,
-    bookedRanges,
-  });
 }
