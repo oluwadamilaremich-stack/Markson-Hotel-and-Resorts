@@ -53,10 +53,10 @@ next-env.d.ts
 **/data/bookings.json
 
 # one-off email tests can send real messages through Brevo
-apps/frontend/scripts/test-cid.mjs
-apps/frontend/scripts/test-email.mjs
-apps/frontend/scripts/test-luxury-email.mjs
-apps/frontend/scripts/test-website-aligned-email.mjs
+scripts/test-cid.mjs
+scripts/test-email.mjs
+scripts/test-luxury-email.mjs
+scripts/test-website-aligned-email.mjs
 
 # uploaded media from Telegram
 **/public/images/uploads/

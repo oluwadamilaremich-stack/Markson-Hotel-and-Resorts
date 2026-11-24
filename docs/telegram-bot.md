@@ -129,7 +129,7 @@ Staff can send commands directly to the bot in their private chat or group:
   3. Remove `@RawDataBot`.
 
 ### Step 3: Add to `.env.local`
-In `apps/frontend/.env.local`:
+In `.env.local` at the repository root:
 ```env
 TELEGRAM_BOT_TOKEN=your_token_from_botfather
 TELEGRAM_CHAT_ID=your_chat_or_group_id
@@ -154,6 +154,6 @@ Invoke-RestMethod -Uri "https://api.telegram.org/bot$TOKEN/setWebhook" -Method P
 }
 ```
 For local development without a public URL, run the web app and `npm run bot:dev` in separate
-terminals from `apps/frontend`. The poller receives commands and button clicks locally, and
+terminals from the repository root. The poller receives commands and button clicks locally, and
 disables the webhook before polling. Do not run it at the same time as the deployed webhook;
 register the webhook again when switching back to deployment.
