@@ -113,7 +113,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-export async function verifyPaystackBooking(reference: string) {
+export async function verifyPaystackBooking(
+  reference: string,
+  loadRooms: typeof getStoredRooms = getStoredRooms,
+) {
   const secret = getPaystackTestSecret();
   if (!secret) {
     return { ok: false as const, statusCode: 503, message: "Paystack test mode is not configured." };
@@ -180,7 +183,7 @@ export async function verifyPaystackBooking(reference: string) {
     return { ok: false as const, statusCode: 422, message: "This transaction has invalid booking details." };
   }
 
-  const room = getStoredRooms().find((storedRoom) => storedRoom.slug === roomSlug) ?? null;
+  const room = (await loadRooms()).find((storedRoom) => storedRoom.slug === roomSlug) ?? null;
   const validation = validateBookingPayment({ checkIn, checkOut, guests, nights }, transaction.amount, room);
   if (!validation.ok) {
     return { ok: false as const, statusCode: 422, message: "Payment details do not match this booking." };

@@ -1,23 +1,23 @@
 import type { Metadata } from "next";
 import Image from "next/image";
 import { notFound } from "next/navigation";
-import { getPost, getPosts } from "@/lib/data";
+import { connection } from "next/server";
+import { getPost } from "@/lib/data";
 import { formatDate } from "@/lib/format";
 import { LightPageHeader } from "@/components/sections/light-page-header";
 import { LinkButton } from "@/components/ui/button";
 import { Reveal } from "@/components/ui/reveal";
 
-export async function generateStaticParams() {
-  const posts = await getPosts();
-  return posts.map((post) => ({ slug: post.slug }));
-}
+export const instant = false;
 
 export async function generateMetadata({ params }: PageProps<"/blog/[slug]">): Promise<Metadata> {
+  await connection();
   const post = await getPost((await params).slug);
   return post ? { title: post.title, description: post.excerpt } : {};
 }
 
 export default async function ArticlePage({ params }: PageProps<"/blog/[slug]">) {
+  await connection();
   const post = await getPost((await params).slug);
   if (!post) notFound();
 

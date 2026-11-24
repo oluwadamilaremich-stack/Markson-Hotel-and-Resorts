@@ -3,6 +3,12 @@ import { rooms } from "@/content/rooms";
 import { formatNaira } from "@/lib/format";
 import { site } from "@/lib/site";
 import { markBookingCheckedOut } from "./store";
+import {
+  handleTelegramAdminCallback,
+  handleTelegramAdminMessage,
+  handleTelegramAdminPhoto,
+  type TelegramAdminDependencies,
+} from "./telegram-admin";
 
 export function getTelegramConfig() {
   const token = process.env.TELEGRAM_BOT_TOKEN?.trim() || "";
@@ -305,6 +311,7 @@ export type TelegramUpdate = {
     chat: { id: number; type: string; title?: string };
     date: number;
     text?: string;
+    photo?: { file_id: string }[];
   };
   callback_query?: {
     id: string;
@@ -318,11 +325,21 @@ export type TelegramUpdate = {
  * Handles incoming Telegram bot webhook updates (commands and callback buttons).
  */
 export async function handleTelegramUpdate(update: TelegramUpdate) {
+  const adminDependencies: TelegramAdminDependencies = {
+    sendMessage: sendTelegramMessage,
+    callApi: callTelegramApi,
+    isAdmin: isAuthorizedAdmin,
+  };
+
   // 1. Handle Inline Button Clicks (Callback Queries)
   if (update.callback_query) {
     const cq = update.callback_query;
     const data = cq.data || "";
     const staffName = cq.from.username ? `@${cq.from.username}` : cq.from.first_name;
+
+    if (await handleTelegramAdminCallback(cq, adminDependencies)) {
+      return { ok: true };
+    }
 
     if (data.startsWith("early_checkout:")) {
       if (!cq.message || !isAuthorizedAdmin(cq.from.id, cq.message.chat.id, cq.message.chat.type)) {
@@ -496,6 +513,15 @@ export async function handleTelegramUpdate(update: TelegramUpdate) {
   }
 
   // 2. Handle Text Messages & Commands
+  if (update.message) {
+    if (await handleTelegramAdminPhoto(update.message, adminDependencies)) {
+      return { ok: true };
+    }
+    if (await handleTelegramAdminMessage(update.message, adminDependencies)) {
+      return { ok: true };
+    }
+  }
+
   if (update.message && typeof update.message.text === "string") {
     const text = update.message.text.trim();
     const chatId = update.message.chat.id;
@@ -592,23 +618,6 @@ export async function handleTelegramUpdate(update: TelegramUpdate) {
         ].join("\n");
 
         await sendTelegramMessage(reply, { chatId });
-        break;
-      }
-
-      case "/admin": {
-        if (!isAuthorizedAdmin(
-          update.message.from?.id ?? 0,
-          chatId,
-          update.message.chat.type,
-        )) {
-          await sendTelegramMessage("⛔ Admin access is restricted to authorized hotel staff.", { chatId });
-          break;
-        }
-
-        await sendTelegramMessage(
-          "🔐 <b>Hotel admin actions</b>\nUse the <b>Early checkout</b> button on a booking alert to record an early departure. Scheduled checkout dates release automatically.",
-          { chatId },
-        );
         break;
       }
 

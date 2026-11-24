@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
+import { connection } from "next/server";
 import { getRoom, getRooms } from "@/lib/data";
 import { roomPolicies } from "@/content/hotel";
 import { formatNaira } from "@/lib/format";
@@ -13,12 +14,10 @@ import { LinkButton } from "@/components/ui/button";
 import { BookingDrawer } from "@/components/booking/booking-drawer";
 import { Reveal } from "@/components/ui/reveal";
 
-export async function generateStaticParams() {
-  const rooms = await getRooms();
-  return rooms.map((room) => ({ slug: room.slug }));
-}
+export const instant = false;
 
 export async function generateMetadata({ params }: PageProps<"/rooms/[slug]">): Promise<Metadata> {
+  await connection();
   const room = await getRoom((await params).slug);
   return room ? { title: room.name, description: room.tagline } : {};
 }
@@ -36,6 +35,7 @@ function Row({ title, children }: { title: string; children: React.ReactNode }) 
 }
 
 export default async function RoomPage({ params }: PageProps<"/rooms/[slug]">) {
+  await connection();
   const { slug } = await params;
   const [room, rooms] = await Promise.all([getRoom(slug), getRooms()]);
   if (!room) notFound();

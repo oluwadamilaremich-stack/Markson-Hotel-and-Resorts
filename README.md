@@ -71,6 +71,6 @@ npm run build
 - Paystack checkout is restricted to test mode and does not charge real money.
 - Booking date checks and payment initialization are not an atomic room hold; keep this in test
   mode until reservation locking and payment/refund handling are added.
-- Bookings use MongoDB. Room and blog edits still use local JSON files, which are not durable on
-  Vercel; editable content needs a database before production use.
+- Bookings, room and blog content, and Telegram admin conversation state use MongoDB. Telegram
+  photo uploads from Vercel require Cloudinary credentials.
 - Do not commit `.env.local` or runtime booking data.

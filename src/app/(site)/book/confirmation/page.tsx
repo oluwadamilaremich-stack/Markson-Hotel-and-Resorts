@@ -5,8 +5,7 @@ import { getRoom } from "@/lib/data";
 import { formatNaira } from "@/lib/format";
 import { verifyPaystackBooking, type VerifiedBooking } from "@/lib/server/paystack";
 import { recordBooking } from "@/lib/server/store";
-import { sendBookingAlert } from "@/lib/server/telegram";
-import { sendBookingConfirmationEmail } from "@/lib/server/brevo";
+import { dispatchBookingNotifications } from "@/lib/server/booking-notifications";
 import { LinkButton } from "@/components/ui/button";
 import { Divider } from "@/components/ui/section";
 
@@ -39,7 +38,7 @@ async function BookingConfirmationContent({
   const room = verifiedBooking ? await getRoom(verifiedBooking.roomSlug) : null;
   if (verifiedBooking && room) {
     try {
-      const isNewBooking = await recordBooking({
+      await recordBooking({
         reference: verifiedBooking.reference,
         roomSlug: verifiedBooking.roomSlug,
         roomName: room.name,
@@ -54,40 +53,14 @@ async function BookingConfirmationContent({
         createdAt: new Date().toISOString(),
         status: "confirmed",
       });
-
-      if (isNewBooking) {
-        sendBookingAlert({
-          reference: verifiedBooking.reference,
-          roomName: room.name,
-          checkIn: verifiedBooking.checkIn,
-          checkOut: verifiedBooking.checkOut,
-          nights: verifiedBooking.nights,
-          guests: verifiedBooking.guests,
-          amountKobo: verifiedBooking.amountKobo,
-          guestName: verifiedBooking.guestName,
-          guestPhone: verifiedBooking.guestPhone,
-          guestEmail: verifiedBooking.guestEmail,
-        }).catch((error) => console.error("[Telegram Alert] Failed to dispatch booking alert:", error));
-
-        if (verifiedBooking.guestEmail) {
-          sendBookingConfirmationEmail({
-            reference: verifiedBooking.reference,
-            roomName: room.name,
-            checkIn: verifiedBooking.checkIn,
-            checkOut: verifiedBooking.checkOut,
-            nights: verifiedBooking.nights,
-            guests: verifiedBooking.guests,
-            amountKobo: verifiedBooking.amountKobo,
-            guestName: verifiedBooking.guestName || "Guest",
-            guestEmail: verifiedBooking.guestEmail,
-            guestPhone: verifiedBooking.guestPhone,
-          }).catch((error) => console.error("[Brevo] Failed to dispatch guest confirmation email:", error));
-        }
-      }
     } catch (error) {
       console.error("[Booking Confirmation] MongoDB could not save the verified booking.", error);
       message = `Payment was verified, but the booking could not be saved. Contact the hotel with reference ${verifiedBooking.reference}.`;
       verifiedBooking = null;
+    }
+
+    if (verifiedBooking) {
+      await dispatchBookingNotifications(verifiedBooking, room.name);
     }
   }
 

@@ -27,7 +27,7 @@ This document outlines the architecture, setup, commands, and notification struc
 │                        Telegram Dispatcher (lib/server/telegram.ts)                           │
 │                        • HTML entity escaping                                                 │
 │                        • Nigerian phone number converter (080.. → wa.me/234..)               │
-│                        • Duplicate alert prevention (in-memory reference set)                 │
+│                        • Persistent room, blog, booking, and admin state in MongoDB           │
 │                        • Inline Keyboard generation (Call, WhatsApp, Acknowledge)             │
 │                                          │                                                    │
 │                                          ▼ POST /sendMessage                                  │
@@ -42,6 +42,7 @@ This document outlines the architecture, setup, commands, and notification struc
 │  • 🛎️ New Confirmed Booking                                   • /rooms (Catalog & Pricing)    │
 │  • 📬 New Guest Inquiry                                        • /status (Lagos Time & Health) │
 │  • 📰 New Subscriber                                          • /contact (Hotel Contacts)     │
+│                                                               • /admin (Rooms, Bookings, Blog)│
 │                                                               • Interactive Button Callbacks  │
 └───────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -107,6 +108,12 @@ Staff can send commands directly to the bot in their private chat or group:
 * `/rooms` — Current rates in Naira (₦), bed configurations, max guest counts, and square footage for all 6 suites.
 * `/status` — Server time in Lagos (`Africa/Lagos`), Paystack environment status (Test/Live), and bot health.
 * `/contact` — Quick lookup for Markson hotel address, concierge phone, and department emails.
+* `/admin` — Manage room prices and photos, add or delete rooms, view/block/cancel bookings, and publish or delete blog posts.
+* `/cancel` — Stop the current admin operation.
+
+The deployed admin menu stores its room, blog, booking, and conversation data in MongoDB.
+Cloudinary credentials are required for room and blog photo uploads; without them, photo edits
+will report an error rather than saving to temporary Vercel storage.
 
 ---
 
@@ -128,21 +135,30 @@ Staff can send commands directly to the bot in their private chat or group:
   2. Add `@RawDataBot` to the group temporarily to get the group `chat_id` (starts with `-100...`).
   3. Remove `@RawDataBot`.
 
-### Step 3: Add to `.env.local`
-In `.env.local` at the repository root:
+### Step 3: Configure environment variables
+Set these variables in the root `.env.local` for local work and in Vercel Project Settings for the
+Production environment:
 ```env
 TELEGRAM_BOT_TOKEN=your_token_from_botfather
 TELEGRAM_CHAT_ID=your_chat_or_group_id
 TELEGRAM_ADMIN_USER_IDS=123456789,987654321
 TELEGRAM_WEBHOOK_SECRET=create_a_random_string_here
+MONGODB_URI=your_mongodb_connection_string
+CLOUDINARY_CLOUD_NAME=your_cloud_name
+CLOUDINARY_API_KEY=your_cloudinary_api_key
+CLOUDINARY_API_SECRET=your_cloudinary_api_secret
 ```
 
 `TELEGRAM_ADMIN_USER_IDS` contains the numeric Telegram user IDs allowed to perform admin
-actions such as early checkout. It is required for group chats. In a private chat, the configured
+actions. It is required for group chats. In a private chat, the configured
 `TELEGRAM_CHAT_ID` owner is also recognized as an admin.
 
-### Step 4: Register the Webhook (When deployed or using ngrok)
-Run this command in PowerShell or terminal (replace with your values):
+Set `BREVO_API_KEY` and `BREVO_SENDER_EMAIL` in Vercel too if guests should receive booking
+confirmation emails.
+
+### Step 4: Register the deployed webhook
+After deploying the app and setting the Vercel environment variables, register the public webhook
+once using the same bot token and webhook secret:
 ```powershell
 $TOKEN = "YOUR_BOT_TOKEN"
 $WEBHOOK_URL = "https://your-domain.com/api/telegram/webhook"
@@ -153,7 +169,7 @@ Invoke-RestMethod -Uri "https://api.telegram.org/bot$TOKEN/setWebhook" -Method P
     secret_token = $SECRET
 }
 ```
-For local development without a public URL, run the web app and `npm run bot:dev` in separate
-terminals from the repository root. The poller receives commands and button clicks locally, and
-disables the webhook before polling. Do not run it at the same time as the deployed webhook;
-register the webhook again when switching back to deployment.
+The webhook handles `/admin` on Vercel; no local PowerShell process needs to stay open. The
+`npm run bot:dev` poller is for local development only. It disables the Telegram webhook and uses
+local JSON files, so do not run it while using the deployed bot or for production content changes.
+Register the deployed webhook again after stopping local polling.

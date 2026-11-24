@@ -1,3 +1,4 @@
+import { connection } from "next/server";
 import { getPosts, getRooms } from "@/lib/data";
 import { LinkButton } from "@/components/ui/button";
 import { Divider } from "@/components/ui/section";
@@ -14,7 +15,10 @@ import { ServicesSlider } from "@/components/home/services-slider";
 import { Testimonials } from "@/components/home/testimonials";
 import { BlogCard } from "@/components/blog/blog-card";
 
+export const instant = false;
+
 export default async function HomePage() {
+  await connection();
   const [rooms, posts] = await Promise.all([getRooms(), getPosts()]);
 
   return (

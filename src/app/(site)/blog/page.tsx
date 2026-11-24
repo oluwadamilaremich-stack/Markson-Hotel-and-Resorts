@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { connection } from "next/server";
 import { getPosts } from "@/lib/data";
 import { LightPageHeader } from "@/components/sections/light-page-header";
 import { BlogList } from "@/components/blog/blog-list";
@@ -9,7 +10,10 @@ export const metadata: Metadata = {
     "Seasonal offerings, local insights, and behind-the-scenes glimpses into coastal luxury at Markson.",
 };
 
+export const instant = false;
+
 export default async function BlogPage() {
+  await connection();
   const posts = await getPosts();
 
   return (

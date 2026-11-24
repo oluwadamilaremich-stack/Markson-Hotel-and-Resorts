@@ -167,3 +167,12 @@ export async function saveTelegramPhoto(
   console.log("[Media] Saved image locally to:", localFilePath);
   return `/images/uploads/${filename}`;
 }
+
+export async function saveTelegramPhotoToCloudinary(fileId: string): Promise<string> {
+  const { buffer } = await downloadTelegramFile(fileId);
+  const cloudinaryUrl = await uploadToCloudinary(buffer, "markson_hotel");
+  if (!cloudinaryUrl) {
+    throw new Error("Cloudinary is not configured or the photo upload failed.");
+  }
+  return cloudinaryUrl;
+}

@@ -5,16 +5,16 @@ export async function getRooms() {
 }
 
 export async function getRoom(slug: string) {
-  const rooms = getStoredRooms();
+  const rooms = await getStoredRooms();
   return rooms.find((r) => r.slug === slug) ?? null;
 }
 
 export async function getPosts() {
-  const posts = getStoredPosts();
+  const posts = await getStoredPosts();
   return [...posts].sort((a, b) => b.date.localeCompare(a.date));
 }
 
 export async function getPost(slug: string) {
-  const posts = getStoredPosts();
+  const posts = await getStoredPosts();
   return posts.find((p) => p.slug === slug) ?? null;
 }

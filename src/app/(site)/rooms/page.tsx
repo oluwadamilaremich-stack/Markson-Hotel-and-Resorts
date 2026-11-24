@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { connection } from "next/server";
 import { getRooms } from "@/lib/data";
 import { PageHero } from "@/components/sections/page-hero";
 import { PageIntro } from "@/components/sections/page-intro";
@@ -11,7 +12,10 @@ export const metadata: Metadata = {
     "From cozy beachfront rooms to luxurious oceanfront suites, each space at Markson is thoughtfully designed for comfort and style.",
 };
 
+export const instant = false;
+
 export default async function RoomsPage() {
+  await connection();
   const rooms = await getRooms();
 
   return (

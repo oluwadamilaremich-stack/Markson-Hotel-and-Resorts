@@ -4,8 +4,7 @@ import { getNights, isDateOnly } from "@/lib/booking-rules";
 import { checkRoomAvailability, recordBooking } from "./store";
 import { readJsonBody } from "./request";
 import { initializePaystackTransaction, verifyPaystackBooking } from "./paystack";
-import { sendBookingAlert } from "./telegram";
-import { sendBookingConfirmationEmail } from "./brevo";
+import { dispatchBookingNotifications } from "./booking-notifications";
 
 type BookingRequest = {
   roomSlug?: unknown;
@@ -126,9 +125,8 @@ export async function verifyBooking(reference: string): Promise<Response> {
   const roomName = room?.name ?? result.booking.roomSlug;
 
   // Persist confirmed booking into data store to lock the calendar dates
-  let isNewBooking: boolean;
   try {
-    isNewBooking = await recordBooking({
+    await recordBooking({
       reference: result.booking.reference,
       roomSlug: result.booking.roomSlug,
       roomName,
@@ -153,37 +151,7 @@ export async function verifyBooking(reference: string): Promise<Response> {
     );
   }
 
-  if (isNewBooking) {
-    // Trigger real-time Telegram notification to hotel staff
-    sendBookingAlert({
-      reference: result.booking.reference,
-      roomName,
-      checkIn: result.booking.checkIn,
-      checkOut: result.booking.checkOut,
-      nights: result.booking.nights,
-      guests: result.booking.guests,
-      amountKobo: result.booking.amountKobo,
-      guestName: result.booking.guestName,
-      guestPhone: result.booking.guestPhone,
-      guestEmail: result.booking.guestEmail,
-    }).catch((error) => console.error("[Telegram Alert] Failed to dispatch booking alert:", error));
-
-    // Trigger luxury branded booking confirmation email to guest via Brevo
-    if (result.booking.guestEmail) {
-      sendBookingConfirmationEmail({
-        reference: result.booking.reference,
-        roomName,
-        checkIn: result.booking.checkIn,
-        checkOut: result.booking.checkOut,
-        nights: result.booking.nights,
-        guests: result.booking.guests,
-        amountKobo: result.booking.amountKobo,
-        guestName: result.booking.guestName || "Guest",
-        guestEmail: result.booking.guestEmail,
-        guestPhone: result.booking.guestPhone,
-      }).catch((error) => console.error("[Brevo] Failed to dispatch guest confirmation email:", error));
-    }
-  }
+  await dispatchBookingNotifications(result.booking, roomName);
 
   return Response.json({ verified: true, booking: result.booking });
 }

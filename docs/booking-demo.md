@@ -13,9 +13,11 @@ a secret key beginning with `sk_test_`; keep the key in `.env.local`, never in a
 4. Open a room page, select **Book a Stay**, and complete checkout with Paystack's test details.
 
 The server verifies transaction status, reference, currency, room, dates, guest limit, and the
-server-calculated amount. After verification, the app records demo bookings in MongoDB, then sends
-a Telegram staff alert and a guest confirmation email. `GET /api/health` checks server status.
+server-calculated amount. After verification, the app records demo bookings in MongoDB, then waits
+for the Telegram staff alert and guest confirmation email to send. Configure `TELEGRAM_BOT_TOKEN`,
+`TELEGRAM_CHAT_ID`, `BREVO_API_KEY`, and `BREVO_SENDER_EMAIL` in Vercel for production alerts.
+`GET /api/health` checks server status.
 
 Paystack is restricted to test mode: a successful test transaction does not charge real money.
-Do not use a live secret key. Room and blog content are still stored in local JSON files, so edits
-to that content are not durable on Vercel.
+Do not use a live secret key. Room and blog content are stored in MongoDB. The Telegram admin CMS
+can update this content; Cloudinary credentials are needed for room and blog photo uploads.

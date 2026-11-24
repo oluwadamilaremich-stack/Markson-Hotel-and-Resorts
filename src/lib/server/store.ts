@@ -8,58 +8,128 @@ import type { Collection, Document } from "mongodb";
 import { getMongoDb } from "./mongodb";
 export { datesOverlap } from "@/lib/booking-rules";
 
-const DATA_DIR = path.resolve(process.cwd(), "data");
-const ROOMS_FILE = path.join(DATA_DIR, "rooms.json");
-const POSTS_FILE = path.join(DATA_DIR, "posts.json");
+const LOCAL_DATA_DIR = path.resolve(process.cwd(), "data");
 
-function ensureDirectoryExists() {
-  if (!fs.existsSync(DATA_DIR)) {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
+type SiteContentDocument = Document & { _id: string; items: unknown };
+
+let siteContentCollectionPromise: Promise<Collection<SiteContentDocument>> | undefined;
+
+function getSiteContentCollection(): Promise<Collection<SiteContentDocument>> {
+  if (!siteContentCollectionPromise) {
+    siteContentCollectionPromise = getMongoDb()
+      .then((db) => db.collection<SiteContentDocument>("site_content"))
+      .catch((error: unknown) => {
+        siteContentCollectionPromise = undefined;
+        throw error;
+      });
   }
+  return siteContentCollectionPromise;
 }
 
-// -------------------------------------------------------------
-// ROOMS PERSISTENCE
-// -------------------------------------------------------------
+function isRoom(value: unknown): value is Room {
+  if (typeof value !== "object" || value === null) return false;
+  const room = value as Record<string, unknown>;
+  return (
+    typeof room.slug === "string" &&
+    typeof room.name === "string" &&
+    typeof room.tagline === "string" &&
+    typeof room.description === "string" &&
+    typeof room.sizeSqft === "number" &&
+    typeof room.beds === "string" &&
+    typeof room.guestsLabel === "string" &&
+    typeof room.maxGuests === "number" &&
+    typeof room.pricePerNight === "number" &&
+    typeof room.image === "string" &&
+    Array.isArray(room.gallery) &&
+    room.gallery.every((item) => typeof item === "string") &&
+    Array.isArray(room.amenities) &&
+    room.amenities.every((item) => typeof item === "string")
+  );
+}
 
-export function getStoredRooms(): Room[] {
-  if (!fs.existsSync(ROOMS_FILE)) {
-    return initialRooms;
-  }
+function isPost(value: unknown): value is Post {
+  if (typeof value !== "object" || value === null) return false;
+  const post = value as Record<string, unknown>;
+  return (
+    typeof post.slug === "string" &&
+    typeof post.title === "string" &&
+    typeof post.excerpt === "string" &&
+    typeof post.date === "string" &&
+    typeof post.image === "string" &&
+    Array.isArray(post.body) &&
+    post.body.every((item) => typeof item === "string")
+  );
+}
 
+function getLocalRooms(): Room[] | null {
+  if (process.env.NODE_ENV === "production") return null;
+  const file = path.join(LOCAL_DATA_DIR, "rooms.json");
+  if (!fs.existsSync(file)) return null;
   try {
-    const raw = fs.readFileSync(ROOMS_FILE, "utf-8");
-    const data = JSON.parse(raw);
-    return Array.isArray(data) ? (data as Room[]) : initialRooms;
+    const data: unknown = JSON.parse(fs.readFileSync(file, "utf-8"));
+    if (Array.isArray(data) && data.every(isRoom)) return data;
+    throw new Error("Local room content is invalid.");
   } catch (error) {
-    console.error("[Store] Error reading rooms.json, falling back to initial rooms:", error);
-    return initialRooms;
+    console.error("[Store] Could not read local rooms.json.", error);
+    return null;
   }
 }
 
-export function saveStoredRooms(rooms: Room[]): void {
-  ensureDirectoryExists();
-  fs.writeFileSync(ROOMS_FILE, JSON.stringify(rooms, null, 2), "utf-8");
+function getLocalPosts(): Post[] | null {
+  if (process.env.NODE_ENV === "production") return null;
+  const file = path.join(LOCAL_DATA_DIR, "posts.json");
+  if (!fs.existsSync(file)) return null;
   try {
-    revalidatePath("/", "layout");
-    revalidatePath("/rooms");
-  } catch {
-    // In background scripts or polling outside Next.js request context, revalidatePath is a no-op
+    const data: unknown = JSON.parse(fs.readFileSync(file, "utf-8"));
+    if (Array.isArray(data) && data.every(isPost)) return data;
+    throw new Error("Local blog content is invalid.");
+  } catch (error) {
+    console.error("[Store] Could not read local posts.json.", error);
+    return null;
   }
 }
 
-export function updateRoomPrice(slug: string, newPrice: number): Room | null {
-  const rooms = getStoredRooms();
+function revalidateSiteContent(): void {
+  revalidatePath("/", "layout");
+  revalidatePath("/rooms");
+  revalidatePath("/rooms/[slug]", "page");
+  revalidatePath("/blog");
+  revalidatePath("/blog/[slug]", "page");
+}
+
+export async function getStoredRooms(): Promise<Room[]> {
+  if (!process.env.MONGODB_URI?.trim()) {
+    return getLocalRooms() ?? structuredClone(initialRooms);
+  }
+  const document = await (await getSiteContentCollection()).findOne({ _id: "rooms" });
+  if (!document) return getLocalRooms() ?? structuredClone(initialRooms);
+  if (!Array.isArray(document.items) || !document.items.every(isRoom)) {
+    throw new Error("Stored room content is invalid.");
+  }
+  return document.items;
+}
+
+export async function saveStoredRooms(rooms: Room[]): Promise<void> {
+  await (await getSiteContentCollection()).replaceOne(
+    { _id: "rooms" },
+    { _id: "rooms", items: rooms },
+    { upsert: true },
+  );
+  revalidateSiteContent();
+}
+
+export async function updateRoomPrice(slug: string, newPrice: number): Promise<Room | null> {
+  const rooms = await getStoredRooms();
   const index = rooms.findIndex((r) => r.slug === slug);
   if (index === -1) return null;
 
   rooms[index] = { ...rooms[index], pricePerNight: newPrice };
-  saveStoredRooms(rooms);
+  await saveStoredRooms(rooms);
   return rooms[index];
 }
 
-export function updateRoomImage(slug: string, newImageUrl: string): Room | null {
-  const rooms = getStoredRooms();
+export async function updateRoomImage(slug: string, newImageUrl: string): Promise<Room | null> {
+  const rooms = await getStoredRooms();
   const index = rooms.findIndex((r) => r.slug === slug);
   if (index === -1) return null;
 
@@ -69,66 +139,64 @@ export function updateRoomImage(slug: string, newImageUrl: string): Room | null 
     heroImage: newImageUrl,
     gallery: [newImageUrl, ...(rooms[index].gallery || [])],
   };
-  saveStoredRooms(rooms);
+  await saveStoredRooms(rooms);
   return rooms[index];
 }
 
-export function addStoredRoom(room: Room): Room {
-  const rooms = getStoredRooms();
+export async function addStoredRoom(room: Room): Promise<Room> {
+  const rooms = await getStoredRooms();
   const existing = rooms.findIndex((r) => r.slug === room.slug);
   if (existing >= 0) {
     rooms[existing] = room;
   } else {
     rooms.push(room);
   }
-  saveStoredRooms(rooms);
+  await saveStoredRooms(rooms);
   return room;
 }
 
-// -------------------------------------------------------------
-// BLOG POSTS PERSISTENCE
-// -------------------------------------------------------------
-
-export function getStoredPosts(): Post[] {
-  if (!fs.existsSync(POSTS_FILE)) {
-    return initialPosts;
-  }
-
-  try {
-    const raw = fs.readFileSync(POSTS_FILE, "utf-8");
-    const data = JSON.parse(raw);
-    return Array.isArray(data) ? (data as Post[]) : initialPosts;
-  } catch (error) {
-    console.error("[Store] Error reading posts.json, falling back to initial posts:", error);
-    return initialPosts;
-  }
+export async function deleteStoredRoom(slug: string): Promise<boolean> {
+  const rooms = await getStoredRooms();
+  const updated = rooms.filter((room) => room.slug !== slug);
+  if (updated.length === rooms.length) return false;
+  await saveStoredRooms(updated);
+  return true;
 }
 
-export function saveStoredPosts(posts: Post[]): void {
-  ensureDirectoryExists();
-  fs.writeFileSync(POSTS_FILE, JSON.stringify(posts, null, 2), "utf-8");
-  try {
-    revalidatePath("/", "layout");
-    revalidatePath("/blog");
-  } catch {
-    // No-op if outside request context
+export async function getStoredPosts(): Promise<Post[]> {
+  if (!process.env.MONGODB_URI?.trim()) {
+    return getLocalPosts() ?? structuredClone(initialPosts);
   }
+  const document = await (await getSiteContentCollection()).findOne({ _id: "posts" });
+  if (!document) return getLocalPosts() ?? structuredClone(initialPosts);
+  if (!Array.isArray(document.items) || !document.items.every(isPost)) {
+    throw new Error("Stored blog content is invalid.");
+  }
+  return document.items;
 }
 
-export function addStoredPost(post: Post): Post {
-  const posts = getStoredPosts();
-  // Prepend to show at the top of the blog list
+export async function saveStoredPosts(posts: Post[]): Promise<void> {
+  await (await getSiteContentCollection()).replaceOne(
+    { _id: "posts" },
+    { _id: "posts", items: posts },
+    { upsert: true },
+  );
+  revalidateSiteContent();
+}
+
+export async function addStoredPost(post: Post): Promise<Post> {
+  const posts = await getStoredPosts();
   const filtered = posts.filter((p) => p.slug !== post.slug);
   const updated = [post, ...filtered];
-  saveStoredPosts(updated);
+  await saveStoredPosts(updated);
   return post;
 }
 
-export function deleteStoredPost(slug: string): boolean {
-  const posts = getStoredPosts();
+export async function deleteStoredPost(slug: string): Promise<boolean> {
+  const posts = await getStoredPosts();
   const updated = posts.filter((p) => p.slug !== slug);
   if (updated.length === posts.length) return false;
-  saveStoredPosts(updated);
+  await saveStoredPosts(updated);
   return true;
 }
 
@@ -154,7 +222,12 @@ export type StoredBooking = {
   status: "confirmed" | "blocked" | "cancelled";
 };
 
-type MongoStoredBooking = StoredBooking & Document;
+type MongoStoredBooking = StoredBooking & Document & {
+  telegramNotificationSentAt?: Date;
+  telegramNotificationClaimedAt?: Date;
+  emailNotificationSentAt?: Date;
+  emailNotificationClaimedAt?: Date;
+};
 
 let bookingsCollectionPromise: Promise<Collection<MongoStoredBooking>> | undefined;
 
@@ -193,6 +266,77 @@ export async function getStoredBookings(): Promise<StoredBooking[]> {
     ...(document.checkedOutAt ? { checkedOutAt: document.checkedOutAt } : {}),
     status: document.status,
   }));
+}
+
+export type TelegramAdminState = {
+  step: string;
+  data: Record<string, unknown>;
+};
+
+type TelegramAdminStateDocument = Document & {
+  chatId: string;
+  userId: string;
+  step: string;
+  data: Record<string, unknown>;
+  updatedAt: Date;
+};
+
+let telegramAdminStatesCollectionPromise: Promise<Collection<TelegramAdminStateDocument>> | undefined;
+
+function getTelegramAdminStatesCollection(): Promise<Collection<TelegramAdminStateDocument>> {
+  if (!telegramAdminStatesCollectionPromise) {
+    telegramAdminStatesCollectionPromise = getMongoDb()
+      .then(async (db) => {
+        const collection = db.collection<TelegramAdminStateDocument>("telegram_admin_states");
+        await collection.createIndex({ chatId: 1, userId: 1 }, { unique: true });
+        await collection.createIndex({ updatedAt: 1 }, { expireAfterSeconds: 86_400 });
+        return collection;
+      })
+      .catch((error: unknown) => {
+        telegramAdminStatesCollectionPromise = undefined;
+        throw error;
+      });
+  }
+  return telegramAdminStatesCollectionPromise;
+}
+
+export async function getTelegramAdminState(
+  chatId: number,
+  userId: number,
+): Promise<TelegramAdminState | null> {
+  const collection = await getTelegramAdminStatesCollection();
+  const session = await collection.findOne({ chatId: String(chatId), userId: String(userId) });
+  if (!session) return null;
+  if (Date.now() - session.updatedAt.getTime() >= 86_400_000) {
+    await collection.deleteOne({ _id: session._id });
+    return null;
+  }
+  return { step: session.step, data: session.data };
+}
+
+export async function saveTelegramAdminState(
+  chatId: number,
+  userId: number,
+  state: TelegramAdminState,
+): Promise<void> {
+  await (await getTelegramAdminStatesCollection()).updateOne(
+    { chatId: String(chatId), userId: String(userId) },
+    {
+      $set: {
+        step: state.step,
+        data: state.data,
+        updatedAt: new Date(),
+      },
+    },
+    { upsert: true },
+  );
+}
+
+export async function clearTelegramAdminState(chatId: number, userId: number): Promise<void> {
+  await (await getTelegramAdminStatesCollection()).deleteOne({
+    chatId: String(chatId),
+    userId: String(userId),
+  });
 }
 
 function getLagosDate() {
@@ -258,6 +402,70 @@ export async function recordBooking(booking: StoredBooking): Promise<boolean> {
     { upsert: true },
   );
   return result.upsertedCount === 1;
+}
+
+export async function claimBookingNotification(
+  reference: string,
+  channel: "telegram" | "email",
+): Promise<boolean> {
+  const collection = await getBookingsCollection();
+  const staleClaim = new Date(Date.now() - 120_000);
+  const result = await collection.updateOne(
+    channel === "telegram"
+      ? {
+          reference,
+          telegramNotificationSentAt: { $exists: false },
+          $or: [
+            { telegramNotificationClaimedAt: { $exists: false } },
+            { telegramNotificationClaimedAt: { $lt: staleClaim } },
+          ],
+        }
+      : {
+          reference,
+          emailNotificationSentAt: { $exists: false },
+          $or: [
+            { emailNotificationClaimedAt: { $exists: false } },
+            { emailNotificationClaimedAt: { $lt: staleClaim } },
+          ],
+        },
+    {
+      $set: channel === "telegram"
+        ? { telegramNotificationClaimedAt: new Date() }
+        : { emailNotificationClaimedAt: new Date() },
+    },
+  );
+  return result.modifiedCount === 1;
+}
+
+export async function markBookingNotificationSent(
+  reference: string,
+  channel: "telegram" | "email",
+): Promise<void> {
+  await (await getBookingsCollection()).updateOne(
+    { reference },
+    {
+      $set: channel === "telegram"
+        ? { telegramNotificationSentAt: new Date() }
+        : { emailNotificationSentAt: new Date() },
+      $unset: channel === "telegram"
+        ? { telegramNotificationClaimedAt: "" }
+        : { emailNotificationClaimedAt: "" },
+    },
+  );
+}
+
+export async function releaseBookingNotificationClaim(
+  reference: string,
+  channel: "telegram" | "email",
+): Promise<void> {
+  await (await getBookingsCollection()).updateOne(
+    { reference },
+    {
+      $unset: channel === "telegram"
+        ? { telegramNotificationClaimedAt: "" }
+        : { emailNotificationClaimedAt: "" },
+    },
+  );
 }
 
 export async function markBookingCheckedOut(reference: string): Promise<{
