@@ -359,15 +359,22 @@ export async function handleTelegramAdminCallback(
         ].join("\n");
       });
       const more = bookings.length > 20 ? `\n\nShowing 20 of ${bookings.length}.` : "";
-      const retryButtons = bookings.slice(0, 20).map((booking) => [{
-        text: `📨 Retry pending alerts · ${booking.roomName.slice(0, 18)} · ${booking.checkIn}`,
-        callback_data: `notify_${booking.reference}`,
-      }]);
+      const retryButtons = bookings
+        .filter((booking) => booking.status === "confirmed")
+        .slice(0, 20)
+        .map((booking) => [
+          {
+            text: `📨 Retry pending alerts · ${booking.roomName.slice(0, 18)} · ${booking.checkIn}`,
+            callback_data: `notify_${booking.reference}`,
+          },
+        ]);
       await dependencies.sendMessage(
         `📋 <b>Active Reservations &amp; Blocks</b>\n━━━━━━━━━━━━━━━━━━━━━━\n${lines.join("\n\n")}${more}`,
         {
           chatId,
-          replyMarkup: { inline_keyboard: retryButtons },
+          ...(retryButtons.length > 0
+            ? { replyMarkup: { inline_keyboard: retryButtons } }
+            : {}),
         },
       );
       return true;
