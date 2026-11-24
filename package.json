@@ -8,7 +8,7 @@
     "build": "node node_modules/next/dist/bin/next build",
     "start": "node node_modules/next/dist/bin/next start",
     "lint": "node node_modules/eslint/bin/eslint.js .",
-    "test": "tsx --test tests/booking-rules.test.ts tests/paystack-verification.test.ts tests/mongodb.test.ts",
+    "test": "tsx --test tests/booking-rules.test.ts tests/paystack-verification.test.ts tests/mongodb.test.ts tests/booking-callback.test.ts",
     "typecheck": "node node_modules/next/dist/bin/next typegen && node node_modules/typescript/bin/tsc --noEmit"
   },
   "dependencies": {

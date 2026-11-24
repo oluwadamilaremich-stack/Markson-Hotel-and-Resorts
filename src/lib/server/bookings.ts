@@ -17,6 +17,10 @@ type BookingRequest = {
   phone?: unknown;
 };
 
+export function getBookingCallbackUrl(requestUrl: string): string {
+  return new URL("/book/confirmation", requestUrl).toString();
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -92,23 +96,11 @@ export async function initializeBooking(request: Request): Promise<Response> {
   }
 
   const reference = `markson_${randomUUID().replaceAll("-", "")}`;
-  let callbackUrl: string;
-  try {
-    const appUrl = process.env.APP_URL?.trim() || new URL(request.url).origin;
-    callbackUrl = new URL("/book/confirmation", appUrl).toString();
-  } catch {
-    console.error("APP_URL must be a valid absolute URL, or the request must have a valid origin.");
-    return Response.json(
-      { error: "The booking service is not configured correctly." },
-      { status: 500 },
-    );
-  }
-
   const checkout = await initializePaystackTransaction({
     reference,
     email,
     amountKobo,
-    callbackUrl,
+    callbackUrl: getBookingCallbackUrl(request.url),
     metadata: {
       booking: { roomSlug, roomName: room.name, checkIn, checkOut, guests, nights },
       customer: { name, phone },
